@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendario Personal Digital</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        .day-cell {
+            height: 120px;
+            overflow-y: auto;
+        }
+        .day-cell::-webkit-scrollbar {
+            width: 4px;
+        }
+        .day-cell::-webkit-scrollbar-thumb {
+            background-color: #cbd5e0;
+            border-radius: 2px;
+        }
+        .entry-content {
+            max-height: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+        }
+        .color-option {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        .color-option.selected {
+            border-color: #000;
+        }
+        .instructions-panel {
+            transition: all 0.3s ease;
+            transform: translateX(100%);
+        }
+        .instructions-panel.open {
+            transform: translateX(0);
+        }
+        #search-results {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 font-sans">
+    <div class="flex">
+        <!-- Contenedor principal del calendario -->
+        <div class="flex-1 max-w-4xl mx-auto relative">
+            <!-- Barra de herramientas superior -->
+            <div class="flex justify-between items-center mb-4">
+                <div class="flex space-x-2">
+                    <button id="show-instructions" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                        Instrucciones
+                    </button>
+                    <button id="export-json" class="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+                        Exportar JSON
+                    </button>
+                    <button id="import-json" class="px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 text-sm">
+                        Importar JSON
+                    </button>
+                    <input type="file" id="import-file" class="hidden" accept=".json">
+                </div>
+                <div class="relative">
+                    <input type="text" id="search-input" placeholder="Buscar entradas..." class="px-3 py-1 border border-gray-300 rounded text-sm">
+                    <button id="search-button" class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </button>
+                </div>
+                <button id="generate-summary" class="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm">
+                    Generar Resumen
+                </button>
+            </div>
+
+            <!-- Calendario -->
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                <!-- Header del calendario -->
+                <div class="flex items-center justify-between p-4 bg-blue-600 text-white">
+                    <button id="prev-month" class="p-2 rounded-full hover:bg-blue-700 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <h1 id="month-year" class="text-xl font-bold">Mes y Año</h1>
+                    <button id="next-month" class="p-2 rounded-full hover:bg-blue-700 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Días de la semana -->
+                <div class="grid grid-cols-7 bg-blue-500 text-white text-center text-sm font-medium">
+                    <div class="p-2">Dom</div>
+                    <div class="p-2">Lun</div>
+                    <div class="p-2">Mar</div>
+                    <div class="p-2">Mié</div>
+                    <div class="p-2">Jue</div>
+                    <div class="p-2">Vie</div>
+                    <div class="p-2">Sáb</div>
+                </div>
+
+                <!-- Días del mes -->
+                <div id="calendar-grid" class="grid grid-cols-7 border-t border-l border-gray-200">
+                    <!-- Los días se generan dinámicamente con JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel de instrucciones desplegable -->
+        <div id="instructions-panel" class="instructions-panel fixed right-0 top-0 h-full w-64 bg-white shadow-lg z-10 p-4 overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold">Instrucciones</h2>
+                <button id="close-instructions" class="text-gray-500 hover:text-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <ol class="list-decimal pl-5 space-y-2 text-sm">
+                <li><strong>Navegar entre meses:</strong> Usa los botones de flecha izquierda y derecha en la parte superior del calendario.</li>
+                <li><strong>Añadir nueva entrada:</strong> Haz clic en el botón "+" en la esquina inferior derecha de cualquier día.</li>
+                <li><strong>Ver/Editar entrada:</strong> Haz clic en cualquier entrada existente en el calendario.</li>
+                <li><strong>Personalizar entradas:</strong> Puedes añadir título, hora (opcional), color y contenido (opcional).</li>
+                <li><strong>Buscar entradas:</strong> Usa el campo de búsqueda en la barra superior.</li>
+                <li><strong>Generar resumen:</strong> Haz clic en "Generar Resumen" para crear un PDF con tus entradas.</li>
+                <li><strong>Exportar/Importar:</strong> Usa los botones correspondientes para guardar o cargar tus entradas.</li>
+                <li><strong>Guardar cambios:</strong> Haz clic en "Guardar" después de escribir o editar una entrada.</li>
+                <li><strong>Eliminar entrada:</strong> Abre una entrada existente y haz clic en "Eliminar".</li>
+                <li><strong>Tus entradas se guardan automáticamente</strong> en tu navegador (LocalStorage) y permanecerán allí incluso si cierras la página.</li>
+            </ol>
+            <p class="mt-4 text-xs text-gray-600">Para usar la aplicación, simplemente guarda este archivo HTML y ábrelo con doble clic en tu navegador preferido.</p>
+        </div>
+    </div>
+
+    <!-- Modal para añadir/editar entradas -->
+    <div id="entry-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-20">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="p-4 border-b">
+                <h2 id="modal-title" class="text-lg font-bold">Nueva entrada</h2>
+            </div>
+            <div class="p-4">
+                <input type="hidden" id="entry-date">
+                <input type="hidden" id="entry-id">
+                <div class="mb-4">
+                    <label for="entry-title" class="block text-sm font-medium text-gray-700 mb-1">Título</label>
+                    <input type="text" id="entry-title" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="entry-time" class="block text-sm font-medium text-gray-700 mb-1">Hora (opcional)</label>
+                    <input type="time" id="entry-time" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                    <div class="flex space-x-2">
+                        <div class="color-option bg-blue-100 selected" data-color="blue-100"></div>
+                        <div class="color-option bg-green-100" data-color="green-100"></div>
+                        <div class="color-option bg-yellow-100" data-color="yellow-100"></div>
+                        <div class="color-option bg-red-100" data-color="red-100"></div>
+                        <div class="color-option bg-purple-100" data-color="purple-100"></div>
+                        <div class="color-option bg-pink-100" data-color="pink-100"></div>
+                    </div>
+                    <input type="hidden" id="entry-color" value="blue-100">
+                </div>
+                <div class="mb-4">
+                    <label for="entry-content" class="block text-sm font-medium text-gray-700 mb-1">Contenido (opcional)</label>
+                    <textarea id="entry-content" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+            </div>
+            <div class="p-4 border-t flex justify-end space-x-2">
+                <button id="cancel-entry" class="px-4 py-2 text-gray-600 hover:text-gray-800">Cancelar</button>
+                <button id="save-entry" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Guardar</button>
+                <button id="delete-entry" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 hidden">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de búsqueda -->
+    <div id="search-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-20">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+            <div class="p-4 border-b">
+                <h2 class="text-lg font-bold">Resultados de búsqueda</h2>
+            </div>
+            <div id="search-results" class="p-4 overflow-y-auto">
+                <!-- Los resultados se generan dinámicamente -->
+            </div>
+            <div class="p-4 border-t flex justify-end">
+                <button id="close-search" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de resumen -->
+    <div id="summary-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-20">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+            <div class="p-4 border-b">
+                <h2 class="text-lg font-bold">Generar Resumen</h2>
+            </div>
+            <div class="p-4">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Filtrar por año</label>
+                    <select id="summary-year" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Todos los años</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Filtrar por mes</label>
+                    <select id="summary-month" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Todos los meses</option>
+                        <option value="1">Enero</option>
+                        <option value="2">Febrero</option>
+                        <option value="3">Marzo</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Mayo</option>
+                        <option value="6">Junio</option>
+                        <option value="7">Julio</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Septiembre</option>
+                        <option value="10">Octubre</option>
+                        <option value="11">Noviembre</option>
+                        <option value="12">Diciembre</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Palabras clave (separadas por comas)</label>
+                    <input type="text" id="summary-keywords" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div class="p-4 border-t flex justify-end space-x-2">
+                <button id="cancel-summary" class="px-4 py-2 text-gray-600 hover:text-gray-800">Cancelar</button>
+                <button id="generate-pdf" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Generar PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Inicializar jsPDF
+        const { jsPDF } = window.jspdf;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Variables de estado
+            let currentDate = new Date();
+            let entries = JSON.parse(localStorage.getItem('diaryEntries')) || [];
+            
+            // Elementos del DOM
+            const monthYearElement = document.getElementById('month-year');
+            const calendarGrid = document.getElementById('calendar-grid');
+            const prevMonthButton = document.getElementById('prev-month');
+            const nextMonthButton = document.getElementById('next-month');
+            const entryModal = document.getElementById('entry-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const entryDateInput = document.getElementById('entry-date');
+            const entryIdInput = document.getElementById('entry-id');
+            const entryTitleInput = document.getElementById('entry-title');
+            const entryTimeInput = document.getElementById('entry-time');
+            const entryContentInput = document.getElementById('entry-content');
+            const entryColorInput = document.getElementById('entry-color');
+            const saveEntryButton = document.getElementById('save-entry');
+            const cancelEntryButton = document.getElementById('cancel-entry');
+            const deleteEntryButton = document.getElementById('delete-entry');
+            const colorOptions = document.querySelectorAll('.color-option');
+            const showInstructionsButton = document.getElementById('show-instructions');
+            const closeInstructionsButton = document.getElementById('close-instructions');
+            const instructionsPanel = document.getElementById('instructions-panel');
+            const exportJsonButton = document.getElementById('export-json');
+            const importJsonButton = document.getElementById('import-json');
+            const importFileInput = document.getElementById('import-file');
+            const searchInput = document.getElementById('search-input');
+            const searchButton = document.getElementById('search-button');
+            const searchModal = document.getElementById('search-modal');
+            const searchResults = document.getElementById('search-results');
+            const closeSearchButton = document.getElementById('close-search');
+            const generateSummaryButton = document.getElementById('generate-summary');
+            const summaryModal = document.getElementById('summary-modal');
+            const summaryYearSelect = document.getElementById('summary-year');
+            const summaryMonthSelect = document.getElementById('summary-month');
+            const summaryKeywordsInput = document.getElementById('summary-keywords');
+            const generatePdfButton = document.getElementById('generate-pdf');
+            const cancelSummaryButton = document.getElementById('cancel-summary');
+            
+            // Nombres de los meses y días
+            const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+            const dayNames = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+            
+            // Inicializar el calendario
+            function initCalendar() {
+                renderCalendar();
+                updateYearSelect();
+                
+                // Event listeners
+                prevMonthButton.addEventListener('click', () => {
+                    currentDate.setMonth(currentDate.getMonth() - 1);
+                    renderCalendar();
+                });
+                
+                nextMonthButton.addEventListener('click', () => {
+                    currentDate.setMonth(currentDate.getMonth() + 1);
+                    renderCalendar();
+                });
+                
+                saveEntryButton.addEventListener('click', saveEntry);
+                cancelEntryButton.addEventListener('click', () => entryModal.classList.add('hidden'));
+                deleteEntryButton.addEventListener('click', deleteEntry);
+                
+                // Selector de color
+                colorOptions.forEach(option => {
+                    option.addEventListener('click', () => {
+                        colorOptions.forEach(opt => opt.classList.remove('selected'));
+                        option.classList.add('selected');
+                        entryColorInput.value = option.dataset.color;
+                    });
+                });
+                
+                // Instrucciones
+                showInstructionsButton.addEventListener('click', () => {
+                    instructionsPanel.classList.add('open');
+                });
+                
+                closeInstructionsButton.addEventListener('click', () => {
+                    instructionsPanel.classList.remove('open');
+                });
+                
+                // Exportar/Importar
+                exportJsonButton.addEventListener('click', exportEntries);
+                importJsonButton.addEventListener('click', () => importFileInput.click());
+                importFileInput.addEventListener('change', importEntries);
+                
+                // Búsqueda
+                searchButton.addEventListener('click', performSearch);
+                searchInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') performSearch();
+                });
+                closeSearchButton.addEventListener('click', () => searchModal.classList.add('hidden'));
+                
+                // Resumen
+                generateSummaryButton.addEventListener('click', () => summaryModal.classList.remove('hidden'));
+                cancelSummaryButton.addEventListener('click', () => summaryModal.classList.add('hidden'));
+                generatePdfButton.addEventListener('click', generatePdf);
+            }
+            
+            // Actualizar selector de años
+            function updateYearSelect() {
+                const years = new Set();
+                entries.forEach(entry => {
+                    const year = entry.date.split('-')[0];
+                    years.add(year);
+                });
+                
+                summaryYearSelect.innerHTML = '<option value="">Todos los años</option>';
+                Array.from(years).sort().forEach(year => {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = year;
+                    summaryYearSelect.appendChild(option);
+                });
+            }
+            
+            // Renderizar el calendario
+            function renderCalendar() {
+                // Actualizar el título del mes y año
+                monthYearElement.textContent = `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+                
+                // Obtener el primer día del mes y el último día del mes
+                const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+                
+                // Obtener el día de la semana del primer día (0 = Domingo, 6 = Sábado)
+                const firstDayOfWeek = firstDayOfMonth.getDay();
+                
+                // Limpiar el grid del calendario
+                calendarGrid.innerHTML = '';
+                
+                // Añadir celdas vacías para los días del mes anterior
+                for (let i = 0; i < firstDayOfWeek; i++) {
+                    const emptyCell = document.createElement('div');
+                    emptyCell.className = 'border-r border-b border-gray-200 bg-gray-100 day-cell';
+                    calendarGrid.appendChild(emptyCell);
+                }
+                
+                // Añadir los días del mes actual
+                for (let day = 1; day <= lastDayOfMonth.getDate(); day++) {
+                    const dayCell = document.createElement('div');
+                    dayCell.className = 'border-r border-b border-gray-200 day-cell p-1 relative';
+                    
+                    // Crear elemento para el número del día
+                    const dayNumber = document.createElement('div');
+                    dayNumber.className = 'text-right font-bold text-sm mb-1';
+                    dayNumber.textContent = day;
+                    dayCell.appendChild(dayNumber);
+                    
+                    // Obtener las entradas para este día
+                    const dateKey = formatDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), day));
+                    const dayEntries = entries.filter(entry => entry.date === dateKey);
+                    
+                    // Ordenar entradas por hora
+                    dayEntries.sort((a, b) => {
+                        if (a.time && b.time) return a.time.localeCompare(b.time);
+                        if (a.time) return -1;
+                        if (b.time) return 1;
+                        return 0;
+                    });
+                    
+                    // Mostrar las entradas del día
+                    dayEntries.forEach(entry => {
+                        const entryElement = document.createElement('div');
+                        entryElement.className = `bg-${entry.color || 'blue-100'} rounded p-1 mb-1 cursor-pointer hover:opacity-80 transition text-xs`;
+                        entryElement.dataset.id = entry.id;
+                        
+                        // Mostrar hora si existe
+                        if (entry.time) {
+                            const entryTime = document.createElement('div');
+                            entryTime.className = 'font-medium text-xs';
+                            entryTime.textContent = entry.time;
+                            entryElement.appendChild(entryTime);
+                        }
+                        
+                        const entryTitle = document.createElement('div');
+                        entryTitle.className = 'font-medium truncate';
+                        entryTitle.textContent = entry.title || '(Sin título)';
+                        
+                        const entryContent = document.createElement('div');
+                        entryContent.className = 'entry-content text-gray-600';
+                        entryContent.textContent = entry.content;
+                        
+                        entryElement.appendChild(entryTitle);
+                        if (entry.content) {
+                            entryElement.appendChild(entryContent);
+                        }
+                        
+                        entryElement.addEventListener('click', () => openEditEntryModal(entry));
+                        
+                        dayCell.appendChild(entryElement);
+                    });
+                    
+                    // Botón para añadir nueva entrada
+                    const addButton = document.createElement('button');
+                    addButton.className = 'absolute bottom-1 right-1 w-5 h-5 flex items-center justify-center bg-blue-500 text-white rounded-full hover:bg-blue-600 transition text-xs';
+                    addButton.innerHTML = '+';
+                    addButton.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openNewEntryModal(new Date(currentDate.getFullYear(), currentDate.getMonth(), day));
+                    });
+                    dayCell.appendChild(addButton);
+                    
+                    // Resaltar el día actual
+                    const today = new Date();
+                    if (currentDate.getFullYear() === today.getFullYear() && 
+                        currentDate.getMonth() === today.getMonth() && 
+                        day === today.getDate()) {
+                        dayCell.classList.add('bg-blue-50');
+                        dayNumber.classList.add('text-blue-600');
+                    }
+                    
+                    calendarGrid.appendChild(dayCell);
+                }
+            }
+            
+            // Formatear la fecha como clave (YYYY-MM-DD)
+            function formatDateKey(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            
+            // Abrir modal para nueva entrada
+            function openNewEntryModal(date) {
+                const dateKey = formatDateKey(date);
+                const dayName = dayNames[date.getDay()];
+                const formattedDate = `${dayName}, ${date.getDate()} de ${monthNames[date.getMonth()]} de ${date.getFullYear()}`;
+                
+                modalTitle.textContent = `Nueva entrada - ${formattedDate}`;
+                entryDateInput.value = dateKey;
+                entryIdInput.value = '';
+                entryTitleInput.value = '';
+                entryTimeInput.value = '';
+                entryContentInput.value = '';
+                entryColorInput.value = 'blue-100';
+                
+                // Resetear selector de color
+                colorOptions.forEach(opt => opt.classList.remove('selected'));
+                document.querySelector('.color-option[data-color="blue-100"]').classList.add('selected');
+                
+                deleteEntryButton.classList.add('hidden');
+                
+                entryModal.classList.remove('hidden');
+                entryTitleInput.focus();
+            }
+            
+            // Abrir modal para editar entrada
+            function openEditEntryModal(entry) {
+                const date = new Date(entry.date);
+                const dayName = dayNames[date.getDay()];
+                const formattedDate = `${dayName}, ${date.getDate()} de ${monthNames[date.getMonth()]} de ${date.getFullYear()}`;
+                
+                modalTitle.textContent = `Editar entrada - ${formattedDate}`;
+                entryDateInput.value = entry.date;
+                entryIdInput.value = entry.id;
+                entryTitleInput.value = entry.title || '';
+                entryTimeInput.value = entry.time || '';
+                entryContentInput.value = entry.content || '';
+                entryColorInput.value = entry.color || 'blue-100';
+                
+                // Seleccionar color correcto
+                colorOptions.forEach(opt => opt.classList.remove('selected'));
+                const colorToSelect = entry.color || 'blue-100';
+                document.querySelector(`.color-option[data-color="${colorToSelect}"]`).classList.add('selected');
+                
+                deleteEntryButton.classList.remove('hidden');
+                
+                entryModal.classList.remove('hidden');
+                entryTitleInput.focus();
+            }
+            
+            // Guardar entrada
+            function saveEntry() {
+                const id = entryIdInput.value || Date.now().toString();
+                const date = entryDateInput.value;
+                const title = entryTitleInput.value.trim();
+                const time = entryTimeInput.value;
+                const content = entryContentInput.value.trim();
+                const color = entryColorInput.value;
+                
+                // Buscar si ya existe una entrada con este ID
+                const existingIndex = entries.findIndex(entry => entry.id === id);
+                
+                if (existingIndex !== -1) {
+                    // Actualizar entrada existente
+                    entries[existingIndex] = { id, date, title, time, content, color };
+                } else {
+                    // Añadir nueva entrada
+                    entries.push({ id, date, title, time, content, color });
+                }
+                
+                // Guardar en LocalStorage
+                localStorage.setItem('diaryEntries', JSON.stringify(entries));
+                updateYearSelect();
+                
+                // Cerrar modal y actualizar calendario
+                entryModal.classList.add('hidden');
+                renderCalendar();
+            }
+            
+            // Eliminar entrada
+            function deleteEntry() {
+                if (confirm('¿Estás seguro de que quieres eliminar esta entrada?')) {
+                    const id = entryIdInput.value;
+                    
+                    // Filtrar las entradas para eliminar la seleccionada
+                    entries = entries.filter(entry => entry.id !== id);
+                    
+                    // Guardar en LocalStorage
+                    localStorage.setItem('diaryEntries', JSON.stringify(entries));
+                    updateYearSelect();
+                    
+                    // Cerrar modal y actualizar calendario
+                    entryModal.classList.add('hidden');
+                    renderCalendar();
+                }
+            }
+            
+            // Exportar entradas a JSON
+            function exportEntries() {
+                const dataStr = JSON.stringify(entries, null, 2);
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                
+                const exportFileDefaultName = `diario-${new Date().toISOString().split('T')[0]}.json`;
+                
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri);
+                linkElement.setAttribute('download', exportFileDefaultName);
+                linkElement.click();
+            }
+            
+            // Importar entradas desde JSON
+            function importEntries(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                
+                if (confirm('¿Estás seguro de que quieres importar entradas? Esto sobrescribirá tus entradas actuales.')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        try {
+                            const importedEntries = JSON.parse(e.target.result);
+                            if (Array.isArray(importedEntries)) {
+                                entries = importedEntries;
+                                localStorage.setItem('diaryEntries', JSON.stringify(entries));
+                                updateYearSelect();
+                                renderCalendar();
+                                alert('Entradas importadas correctamente.');
+                            } else {
+                                alert('El archivo no contiene datos válidos.');
+                            }
+                        } catch (error) {
+                            alert('Error al leer el archivo: ' + error.message);
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+                // Resetear el input para permitir importar el mismo archivo otra vez
+                event.target.value = '';
+            }
+            
+            // Realizar búsqueda
+            function performSearch() {
+                const query = searchInput.value.trim().toLowerCase();
+                if (!query) return;
+                
+                const results = entries.filter(entry => {
+                    return (entry.title && entry.title.toLowerCase().includes(query)) ||
+                           (entry.content && entry.content.toLowerCase().includes(query));
+                });
+                
+                displaySearchResults(results);
+            }
+            
+            // Mostrar resultados de búsqueda
+            function displaySearchResults(results) {
+                searchResults.innerHTML = '';
+                
+                if (results.length === 0) {
+                    searchResults.innerHTML = '<p class="text-gray-500">No se encontraron resultados.</p>';
+                    searchModal.classList.remove('hidden');
+                    return;
+                }
+                
+                results.forEach(entry => {
+                    const date = new Date(entry.date);
+                    const formattedDate = `${dayNames[date.getDay()]}, ${date.getDate()} de ${monthNames[date.getMonth()]} de ${date.getFullYear()}`;
+                    
+                    const entryElement = document.createElement('div');
+                    entryElement.className = `mb-4 p-3 bg-${entry.color || 'blue-100'} rounded-lg cursor-pointer`;
+                    entryElement.addEventListener('click', () => {
+                        openEditEntryModal(entry);
+                        searchModal.classList.add('hidden');
+                    });
+                    
+                    const entryDate = document.createElement('div');
+                    entryDate.className = 'font-bold text-sm mb-1';
+                    entryDate.textContent = formattedDate + (entry.time ? ` a las ${entry.time}` : '');
+                    
+                    const entryTitle = document.createElement('div');
+                    entryTitle.className = 'font-medium mb-1';
+                    entryTitle.textContent = entry.title || '(Sin título)';
+                    
+                    const entryContent = document.createElement('div');
+                    entryContent.className = 'text-sm text-gray-700';
+                    entryContent.textContent = entry.content || '';
+                    
+                    entryElement.appendChild(entryDate);
+                    entryElement.appendChild(entryTitle);
+                    entryElement.appendChild(entryContent);
+                    
+                    searchResults.appendChild(entryElement);
+                });
+                
+                searchModal.classList.remove('hidden');
+            }
+            
+            // Generar PDF
+            function generatePdf() {
+                const year = summaryYearSelect.value;
+                const month = summaryMonthSelect.value;
+                const keywords = summaryKeywordsInput.value.trim().toLowerCase();
+                const keywordList = keywords ? keywords.split(',') : [];
+                
+                // Filtrar entradas
+                let filteredEntries = [...entries];
+                
+                if (year) {
+                    filteredEntries = filteredEntries.filter(entry => entry.date.startsWith(year));
+                }
+                
+                if (month) {
+                    filteredEntries = filteredEntries.filter(entry => {
+                        const entryMonth = entry.date.split('-')[1];
+                        return entryMonth === String(month).padStart(2, '0');
+                    });
+                }
+                
+                if (keywordList.length > 0) {
+                    filteredEntries = filteredEntries.filter(entry => {
+                        const title = entry.title ? entry.title.toLowerCase() : '';
+                        const content = entry.content ? entry.content.toLowerCase() : '';
+                        
+                        return keywordList.some(keyword => {
+                            const trimmedKeyword = keyword.trim();
+                            return title.includes(trimmedKeyword) || content.includes(trimmedKeyword);
+                        });
+                    });
+                }
+                
+                if (filteredEntries.length === 0) {
+                    alert('No hay entradas que coincidan con los filtros seleccionados.');
+                    return;
+                }
+                
+                // Ordenar entradas por fecha
+                filteredEntries.sort((a, b) => a.date.localeCompare(b.date));
+                
+                // Crear PDF
+                const doc = new jsPDF();
+                
+                // Título
+                doc.setFontSize(18);
+                doc.text('Resumen de Diario Personal', 105, 15, { align: 'center' });
+                
+                // Filtros aplicados
+                doc.setFontSize(12);
+                let filtersText = 'Filtros aplicados: ';
+                const filters = [];
+                if (year) filters.push(`Año: ${year}`);
+                if (month) filters.push(`Mes: ${monthNames[parseInt(month) - 1]}`);
+                if (keywords) filters.push(`Palabras clave: ${keywords}`);
+                
+                filtersText += filters.length > 0 ? filters.join(', ') : 'Ninguno';
+                doc.text(filtersText, 105, 25, { align: 'center' });
+                
+                // Entradas
+                doc.setFontSize(10);
+                let yPosition = 40;
+                
+                filteredEntries.forEach((entry, index) => {
+                    const date = new Date(entry.date);
+                    const formattedDate = `${dayNames[date.getDay()]}, ${date.getDate()} de ${monthNames[date.getMonth()]} de ${date.getFullYear()}`;
+                    
+                    // Fecha
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(formattedDate + (entry.time ? ` - ${entry.time}` : ''), 15, yPosition);
+                    
+                    // Título
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(entry.title || '(Sin título)', 15, yPosition + 7);
+                    
+                    // Contenido
+                    if (entry.content) {
+                        doc.setFont('helvetica', 'normal');
+                        const splitText = doc.splitTextToSize(entry.content, 180);
+                        doc.text(splitText, 15, yPosition + 14);
+                        yPosition += 7 + (splitText.length * 5);
+                    } else {
+                        yPosition += 14;
+                    }
+                    
+                    // Separador
+                    if (index < filteredEntries.length - 1) {
+                        doc.line(15, yPosition + 5, 195, yPosition + 5);
+                        yPosition += 10;
+                    }
+                    
+                    // Nueva página si es necesario
+                    if (yPosition > 270) {
+                        doc.addPage();
+                        yPosition = 20;
+                    }
+                });
+                
+                // Guardar PDF
+                doc.save(`resumen-diario-${new Date().toISOString().split('T')[0]}.pdf`);
+                summaryModal.classList.add('hidden');
+            }
+            
+            // Iniciar la aplicación
+            initCalendar();
+        });
+    </script>
+</body>
+</html>
