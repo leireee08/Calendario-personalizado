@@ -1,24 +1,22 @@
-# Agrupamos calculando los numeradores y denominadores con cuidado de los NA
-PORT <- PORTFOLIO[, .(
-  # 1. Componentes de la PD (Usan todos los registros, ignorando NAs de saldo si los hubiera)
+# 1. Calculamos la PD_TRIM usando MARKOV (tu código original que funciona)
+PORT_PD <- MARKOV[, .(
   PD_NUM = sum(PD * BAL_PERFORMING, na.rm = TRUE),
   BAL_PERFORMING = sum(BAL_PERFORMING, na.rm = TRUE),
-  BAL_DEFAULT = sum(BAL_DEFAULT, na.rm = TRUE),
-  
-  # 2. Componentes de la LGD (Requieren un manejo especial)
-  # Numerador: Ignoramos la fila en la suma si la LGD es nula
-  LGD_NUM = sum(LGD * PD * BAL_PERFORMING, na.rm = TRUE),
-  
-  # Denominador de la LGD: ¡Solo debe sumar el saldo ponderado de aquellos contratos que SÍ tienen LGD!
-  LGD_DEN = sum((PD * BAL_PERFORMING)[!is.na(LGD)], na.rm = TRUE)
-  
-), keyby = .(DATASET, PORT_ID, END_DATE)]
+  BAL_DEFAULT = sum(BAL_DEFAULT, na.rm = TRUE)
+), keyby = .(DATASET, END_DATE, PORT_ID)]
 
+PORT_PD[, PD_TRIM := PD_NUM / BAL_PERFORMING]
+PORT_PD[BAL_PERFORMING == 0, PD_TRIM := 1]
 
-# Calculamos los Ratios Finales (PD_TRIM y LGD_TRIM)
-PORT[, PD_TRIM := PD_NUM / BAL_PERFORMING]
-PORT[BAL_PERFORMING == 0, PD_TRIM := 1] # Corrección de división por cero
+# 2. Preparamos PORTFOLIO (Cruce y filtro de nulos para la LGD)
+PORTFOLIO <- MARKOV[BU_LGD, on = .(DATASET, END_DATE, PORT_ID, ACC_ID)]
+PORTFOLIO <- PORTFOLIO[!is.na(LGD), ]
 
-PORT[, LGD_TRIM := LGD_NUM / LGD_DEN]
-# Si quieres asegurar que no falle por división por 0 en la LGD:
-PORT[LGD_DEN == 0 | is.na(LGD_DEN), LGD_TRIM := 0]
+# 3. Calculamos la LGD_TRIM usando únicamente PORTFOLIO
+PORT_LGD <- PORTFOLIO[, .(
+  LGD_TRIM = sum(LGD * (PD * BAL_PERFORMING), na.rm = TRUE) / sum(PD * BAL_PERFORMING, na.rm = TRUE)
+), keyby = .(DATASET, END_DATE, PORT_ID)]
+
+# 4. Unimos los resultados a nivel de cartera
+# Esto te dará una tabla PORT final con la PD_TRIM correcta y la LGD_TRIM correcta
+PORT_FINAL <- merge(PORT_PD, PORT_LGD, by = c("DATASET", "END_DATE", "PORT_ID"), all.x = TRUE)
